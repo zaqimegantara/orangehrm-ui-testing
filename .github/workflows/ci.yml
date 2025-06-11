@@ -26,7 +26,15 @@ jobs:
       run: |
         python -m pip install --upgrade pip
         pip install -r requirements.txt
-        sudo apt install -y firefox geckodriver chromium-browser chromium-chromedriver
+        
+        sudo apt update
+        sudo apt install -y firefox
+
+        GECKODRIVER_VERSION=0.34.0
+        wget -q "https://github.com/mozilla/geckodriver/releases/download/v$GECKODRIVER_VERSION/geckodriver-v$GECKODRIVER_VERSION-linux64.tar.gz"
+        tar -xzf geckodriver-v$GECKODRIVER_VERSION-linux64.tar.gz
+        chmod +x geckodriver
+        sudo mv geckodriver /usr/local/bin/
 
     - name: ⚙️ Run browser compatibility tests (Chrome/Firefox only)
       run: pytest tests/test_browser_compat.py -v
