@@ -11,8 +11,10 @@ from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.common.exceptions import TimeoutException
 
-# Load BASE_URL from .env
-load_dotenv()
+# Load from project root regardless of where the test file lives
+env_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), '.env')
+load_dotenv(dotenv_path=env_path)
+
 BASE_URL = os.getenv("BASE_URL")
 
 @pytest.mark.parametrize("browser", ["chrome", "firefox", "edge"])
