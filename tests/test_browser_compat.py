@@ -11,60 +11,68 @@ from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.common.exceptions import TimeoutException
 
+# Import WebDriverManager classes
+from webdriver_manager.chrome import ChromeDriverManager
+from webdriver_manager.firefox import GeckoDriverManager
+from webdriver_manager.microsoft import EdgeChromiumDriverManager
+
 # Load .env from root
 env_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), '.env')
 if os.path.exists(env_path):
     load_dotenv(dotenv_path=env_path)
 
-# Use GitHub secret or fallback
-BASE_URL = os.getenv("BASE_URL", "https://example.ngrok-free.app")
+# Use GitHub secret or fallback (os.getenv returns None if not found, which is fine for driver.get later)
+BASE_URL = os.getenv("BASE_URL")
 
 # Detect if running in GitHub Actions
 IS_CI = os.getenv("CI") == "true"
-BROWSERS = ["chrome", "firefox"] if IS_CI else ["chrome", "firefox", "edge"]
+# Updated BROWSERS list: Always include Edge if you intend to test it in CI and locally
+# The previous logic was explicitly excluding Edge when IS_CI was true.
+BROWSERS = ["chrome", "firefox", "edge"]
 
 @pytest.mark.parametrize("browser", BROWSERS)
 def test_login_browser_compat(browser):
     print(f"\n[{browser}] Starting test...")
 
-    if browser == "chrome":
-        options = ChromeOptions()
-        options.add_argument("--headless=new")
-        options.add_argument("--disable-gpu")
-        options.add_argument("--no-sandbox")
-        options.add_argument("--disable-dev-shm-usage")
-        options.add_argument("--user-agent=ngrok-skip-browser-warning")
-        driver = webdriver.Chrome(options=options)
-
-    elif browser == "firefox":
-        options = FirefoxOptions()
-        if IS_CI:
-            options.binary_location = "/usr/bin/firefox"
-        options.add_argument("--headless")
-        driver = webdriver.Firefox(options=options)
-
-    elif browser == "edge":
-        if IS_CI:
-            pytest.skip("Edge is not supported in GitHub Actions runners.")
-        options = EdgeOptions()
-        options.add_argument("--headless=new")
-        options.add_argument("--disable-gpu")
-        options.add_argument("--no-sandbox")
-        options.add_argument("--disable-dev-shm-usage")
-        driver = webdriver.Edge(options=options)
-
-    else:
-        raise ValueError("Unsupported browser")
-
-    driver.set_window_size(1920, 1080)
-    wait = WebDriverWait(driver, 15)
-
+    driver = None # Initialize driver to None
     try:
+        if browser == "chrome":
+            options = ChromeOptions()
+            options.add_argument("--headless=new")
+            options.add_argument("--disable-gpu")
+            options.add_argument("--no-sandbox")
+            options.add_argument("--disable-dev-shm-usage")
+            options.add_argument("--user-agent=ngrok-skip-browser-warning")
+            driver = webdriver.Chrome(service=webdriver.ChromeService(ChromeDriverManager().install()), options=options)
+
+        elif browser == "firefox":
+            options = FirefoxOptions()
+            options.add_argument("--headless")
+            driver = webdriver.Firefox(service=webdriver.FirefoxService(GeckoDriverManager().install()), options=options)
+
+        elif browser == "edge":
+            # REMOVED: if IS_CI: pytest.skip("Edge is not supported in GitHub Actions runners.")
+            # Now, Edge is supported and will be run in CI.
+            options = EdgeOptions()
+            options.add_argument("--headless=new")
+            options.add_argument("--disable-gpu")
+            options.add_argument("--no-sandbox")
+            options.add_argument("--disable-dev-shm-usage")
+            options.add_argument("--user-agent=ngrok-skip-browser-warning")
+            # Correct and single line for Edge driver initialization using webdriver-manager
+            driver = webdriver.Edge(service=webdriver.EdgeService(EdgeChromiumDriverManager().install()), options=options)
+
+        else:
+            raise ValueError("Unsupported browser")
+
+        driver.set_window_size(1920, 1080)
+        wait = WebDriverWait(driver, 15)
+
         # Visit ngrok root
         driver.get(BASE_URL)
         print(f"[{browser}] Opened: {driver.current_url}")
 
-        # Bypass ngrok warning
+        # Bypass ngrok warning (using specific exception for clarity)
         try:
             visit_btn = WebDriverWait(driver, 10).until(
                 EC.element_to_be_clickable((By.XPATH, "//*[contains(text(), 'Visit Site')]"))
@@ -72,8 +80,10 @@ def test_login_browser_compat(browser):
             print(f"[{browser}] Clicking ngrok warning button...")
             visit_btn.click()
             time.sleep(1)
-        except:
-            print(f"[{browser}] No ngrok warning.")
+        except TimeoutException: # Catch TimeoutException if button not found
+            print(f"[{browser}] No ngrok warning or button not found within timeout.")
+        except Exception as e: # Catch other potential errors during warning bypass
+            print(f"[{browser}] Error bypassing ngrok warning: {e}")
 
         # Go to login
         driver.get(BASE_URL + "/web/index.php/auth/login")
@@ -90,14 +100,17 @@ def test_login_browser_compat(browser):
         print(f"[{browser}] ✅ Login successful. Screenshot saved.")
 
     except TimeoutException:
-        driver.save_screenshot(f"error-{browser}.png")
-        print(f"[{browser}] ❌ TimeoutException.")
-        raise
+        if driver:
+            driver.save_screenshot(f"error-{browser}.png")
+        print(f"[{browser}] ❌ TimeoutException: Element not found or action timed out.")
+        raise # Re-raise the exception to fail the test
 
     except Exception as e:
-        driver.save_screenshot(f"error-{browser}.png")
+        if driver:
+            driver.save_screenshot(f"error-{browser}.png")
         print(f"[{browser}] ❌ Unexpected error: {e}")
-        raise
+        raise # Re-raise the exception to fail the test
 
     finally:
-        driver.quit()
+        if driver:
+            driver.quit()
