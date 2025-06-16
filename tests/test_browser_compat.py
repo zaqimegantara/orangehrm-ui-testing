@@ -11,17 +11,22 @@ from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.common.exceptions import TimeoutException
 
-# Load from project root regardless of where the test file lives
+# Load .env from root
 env_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), '.env')
-load_dotenv(dotenv_path=env_path)
+if os.path.exists(env_path):
+    load_dotenv(dotenv_path=env_path)
 
-BASE_URL = os.getenv("BASE_URL")
+# Use GitHub secret or fallback
+BASE_URL = os.getenv("BASE_URL", "https://example.ngrok-free.app")
 
-@pytest.mark.parametrize("browser", ["chrome", "firefox", "edge"])
+# Detect if running in GitHub Actions
+IS_CI = os.getenv("CI") == "true"
+BROWSERS = ["chrome", "firefox"] if IS_CI else ["chrome", "firefox", "edge"]
+
+@pytest.mark.parametrize("browser", BROWSERS)
 def test_login_browser_compat(browser):
     print(f"\n[{browser}] Starting test...")
 
-    # --- Setup drivers ---
     if browser == "chrome":
         options = ChromeOptions()
         options.add_argument("--headless=new")
@@ -33,11 +38,14 @@ def test_login_browser_compat(browser):
 
     elif browser == "firefox":
         options = FirefoxOptions()
-        # comment this line for visible debugging
+        if IS_CI:
+            options.binary_location = "/usr/bin/firefox"
         options.add_argument("--headless")
         driver = webdriver.Firefox(options=options)
 
     elif browser == "edge":
+        if IS_CI:
+            pytest.skip("Edge is not supported in GitHub Actions runners.")
         options = EdgeOptions()
         options.add_argument("--headless=new")
         options.add_argument("--disable-gpu")
@@ -52,49 +60,43 @@ def test_login_browser_compat(browser):
     wait = WebDriverWait(driver, 15)
 
     try:
-        # STEP 1: Go to the base URL (not directly to login)
+        # Visit ngrok root
         driver.get(BASE_URL)
         print(f"[{browser}] Opened: {driver.current_url}")
 
-        # STEP 2: Detect and click 'Visit Site' if on ngrok warning
+        # Bypass ngrok warning
         try:
             visit_btn = WebDriverWait(driver, 10).until(
                 EC.element_to_be_clickable((By.XPATH, "//*[contains(text(), 'Visit Site')]"))
             )
-            print(f"[{browser}] Ngrok warning detected. Clicking 'Visit Site'...")
+            print(f"[{browser}] Clicking ngrok warning button...")
             visit_btn.click()
             time.sleep(1)
         except:
-            print(f"[{browser}] No ngrok warning or 'Visit Site' button not found.")
+            print(f"[{browser}] No ngrok warning.")
 
-        # STEP 3: Now go to the actual login page
+        # Go to login
         driver.get(BASE_URL + "/web/index.php/auth/login")
-        print(f"[{browser}] Navigated to login page.")
-
-        # STEP 4: Perform login
         username_input = wait.until(EC.visibility_of_element_located((By.NAME, "username")))
         password_input = driver.find_element(By.NAME, "password")
         username_input.send_keys("zaqimegantara")
         password_input.send_keys("rizkyzaqI3@")
         driver.find_element(By.TAG_NAME, "button").click()
-        print(f"[{browser}] Login submitted.")
 
-        # STEP 5: Wait for dashboard
+        # Wait for dashboard
         wait.until(EC.presence_of_element_located((By.CLASS_NAME, "oxd-topbar-header-breadcrumb-module")))
-
-        # STEP 6: Save success screenshot
         driver.save_screenshot(f"login-{browser}.png")
         assert "dashboard" in driver.page_source.lower()
-        print(f"[{browser}] Test passed. Screenshot saved: login-{browser}.png")
+        print(f"[{browser}] ✅ Login successful. Screenshot saved.")
 
     except TimeoutException:
-        print(f"[{browser}] TimeoutException occurred. Saving error screenshot...")
         driver.save_screenshot(f"error-{browser}.png")
+        print(f"[{browser}] ❌ TimeoutException.")
         raise
 
     except Exception as e:
-        print(f"[{browser}] Unexpected error: {e}")
         driver.save_screenshot(f"error-{browser}.png")
+        print(f"[{browser}] ❌ Unexpected error: {e}")
         raise
 
     finally:
