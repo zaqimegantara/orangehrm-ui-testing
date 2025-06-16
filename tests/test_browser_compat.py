@@ -1,7 +1,7 @@
 import pytest
 import os
 import time
-import sys
+# Removed sys as we are no longer logging directly to sys.stdout for geckodriver
 from dotenv import load_dotenv
 from selenium import webdriver
 from selenium.webdriver.chrome.options import Options as ChromeOptions
@@ -20,6 +20,9 @@ from selenium.webdriver.chrome.service import Service as ChromeService
 from selenium.webdriver.firefox.service import Service as FirefoxService
 from selenium.webdriver.edge.service import Service as EdgeService
 
+# Import RemoteConnection to set its timeout for session startup
+from selenium.webdriver.remote.remote_connection import RemoteConnection
+
 
 # Load .env from root
 env_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), '.env')
@@ -27,7 +30,7 @@ if os.path.exists(env_path):
     load_dotenv(dotenv_path=env_path)
 
 # Use GitHub secret or fallback (os.getenv returns None if not found, which might cause issues later)
-BASE_URL = os.getenv("BASE_URL", "") # Added empty string default for safety. Make sure secret is set!
+BASE_URL = os.getenv("BASE_URL", "")
 
 # Detect if running in GitHub Actions
 IS_CI = os.getenv("CI") == "true"
@@ -38,6 +41,8 @@ def test_login_browser_compat(browser):
     print(f"\n[{browser}] Starting test...")
 
     driver = None # Initialize driver to None
+    geckodriver_log_path = None # Initialize log path for Firefox, to be used in finally block
+
     try:
         if browser == "chrome":
             options = ChromeOptions()
@@ -51,10 +56,21 @@ def test_login_browser_compat(browser):
         elif browser == "firefox":
             options = FirefoxOptions()
             options.add_argument("--headless")
-            # Correct way to use GeckoDriverManager with FirefoxService
-            # Increased timeout for Firefox as discussed
-            # Added log_output=sys.stdout for debugging geckodriver startup
-            service = FirefoxService(GeckoDriverManager().install(), timeout=300, log_output=sys.stdout) # <-- CHANGED THIS LINE (timeout=300 and log_output)
+
+            # Define a path for the geckodriver log file
+            # os.getcwd() gets the current working directory, which is the repo root in CI
+            geckodriver_log_path = os.path.join(os.getcwd(), f"geckodriver_firefox.log")
+
+            service = FirefoxService(
+                GeckoDriverManager().install(),
+                timeout=300, # Increased timeout for Firefox Service
+                log_output=geckodriver_log_path # Direct geckodriver logs to a file
+            )
+            
+            # Explicitly set the timeout on the remote connection for session startup
+            # This is crucial as service.timeout might not propagate to urllib3 in some Selenium versions
+            RemoteConnection.set_timeout(300) # Set to 300 seconds (5 minutes)
+
             driver = webdriver.Firefox(service=service, options=options)
 
         elif browser == "edge":
@@ -124,3 +140,20 @@ def test_login_browser_compat(browser):
     finally:
         if driver:
             driver.quit()
+        
+        # This block will print the geckodriver log file content if it exists
+        # This helps in debugging without conflicting with pytest's stdout capture
+        if browser == "firefox" and geckodriver_log_path and os.path.exists(geckodriver_log_path):
+            print(f"\n--- Geckodriver log content for Firefox test ---")
+            try:
+                with open(geckodriver_log_path, 'r') as f:
+                    print(f.read())
+            except Exception as log_err:
+                print(f"Error reading geckodriver log file: {log_err}")
+            print(f"--- End Geckodriver log content ---")
+            
+            # Optional: Clean up the log file after reading
+            # try:
+            #     os.remove(geckodriver_log_path)
+            # except Exception as rm_err:
+            #     print(f"Error removing geckodriver log file: {rm_err}")
