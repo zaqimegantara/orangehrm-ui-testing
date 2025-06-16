@@ -1,6 +1,7 @@
 import pytest
 import os
 import time
+import sys
 from dotenv import load_dotenv
 from selenium import webdriver
 from selenium.webdriver.chrome.options import Options as ChromeOptions
@@ -9,15 +10,15 @@ from selenium.webdriver.edge.options import Options as EdgeOptions
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
-from selenium.common.exceptions import TimeoutException, WebDriverException # Import WebDriverException
+from selenium.common.exceptions import TimeoutException, WebDriverException
 
 # Import WebDriverManager classes and their respective Service classes
 from webdriver_manager.chrome import ChromeDriverManager
 from webdriver_manager.firefox import GeckoDriverManager
 from webdriver_manager.microsoft import EdgeChromiumDriverManager
-from selenium.webdriver.chrome.service import Service as ChromeService # Explicitly import ChromeService
+from selenium.webdriver.chrome.service import Service as ChromeService
 from selenium.webdriver.firefox.service import Service as FirefoxService
-from selenium.webdriver.edge.service import Service as EdgeService # Explicitly import EdgeService
+from selenium.webdriver.edge.service import Service as EdgeService
 
 
 # Load .env from root
@@ -26,12 +27,11 @@ if os.path.exists(env_path):
     load_dotenv(dotenv_path=env_path)
 
 # Use GitHub secret or fallback (os.getenv returns None if not found, which might cause issues later)
-# It's safer to have a default empty string if BASE_URL is critical
 BASE_URL = os.getenv("BASE_URL", "") # Added empty string default for safety. Make sure secret is set!
 
 # Detect if running in GitHub Actions
 IS_CI = os.getenv("CI") == "true"
-BROWSERS = ["chrome", "firefox", "edge"] # Now truly includes all three for CI and local
+BROWSERS = ["chrome", "firefox", "edge"]
 
 @pytest.mark.parametrize("browser", BROWSERS)
 def test_login_browser_compat(browser):
@@ -46,7 +46,6 @@ def test_login_browser_compat(browser):
             options.add_argument("--no-sandbox")
             options.add_argument("--disable-dev-shm-usage")
             options.add_argument("--user-agent=ngrok-skip-browser-warning")
-            # Correct way to use ChromeDriverManager with ChromeService
             driver = webdriver.Chrome(service=ChromeService(ChromeDriverManager().install()), options=options)
 
         elif browser == "firefox":
@@ -54,7 +53,8 @@ def test_login_browser_compat(browser):
             options.add_argument("--headless")
             # Correct way to use GeckoDriverManager with FirefoxService
             # Increased timeout for Firefox as discussed
-            service = FirefoxService(GeckoDriverManager().install(), timeout=180)
+            # Added log_output=sys.stdout for debugging geckodriver startup
+            service = FirefoxService(GeckoDriverManager().install(), timeout=300, log_output=sys.stdout) # <-- CHANGED THIS LINE (timeout=300 and log_output)
             driver = webdriver.Firefox(service=service, options=options)
 
         elif browser == "edge":
@@ -64,10 +64,7 @@ def test_login_browser_compat(browser):
             options.add_argument("--no-sandbox")
             options.add_argument("--disable-dev-shm-usage")
             options.add_argument("--user-agent=ngrok-skip-browser-warning")
-            # --- THIS IS THE CRITICAL FIX FOR EDGE ---
-            # Correct way to use EdgeChromiumDriverManager with EdgeService
             driver = webdriver.Edge(service=EdgeService(EdgeChromiumDriverManager().install()), options=options)
-            # --- END CRITICAL FIX ---
 
         else:
             raise ValueError("Unsupported browser")
@@ -90,13 +87,9 @@ def test_login_browser_compat(browser):
             visit_btn.click()
             time.sleep(1) # Give a moment for redirect
         except TimeoutException:
-            # This is okay if no ngrok warning is present or it's bypassed instantly by user-agent
             print(f"[{browser}] No ngrok warning or button not found within timeout.")
         except Exception as e:
-            # Catch other potential errors during warning bypass, e.g., if page content isn't as expected
             print(f"[{browser}] Error during ngrok warning bypass: {e}")
-            # Optionally, you might want to raise this if it's a critical early failure
-            # raise
 
         # Go to login
         login_url = f"{BASE_URL}/web/index.php/auth/login"
@@ -116,17 +109,17 @@ def test_login_browser_compat(browser):
         assert "dashboard" in driver.page_source.lower()
         print(f"[{browser}] ✅ Login successful. Screenshot saved.")
 
-    except (TimeoutException, WebDriverException) as e: # Catch WebDriverException for broader driver issues
+    except (TimeoutException, WebDriverException) as e:
         if driver:
             driver.save_screenshot(f"error-{browser}.png")
         print(f"[{browser}] ❌ Test failed with Selenium error: {e}")
-        raise # Re-raise the exception to fail the test
+        raise
 
     except Exception as e:
         if driver:
             driver.save_screenshot(f"error-{browser}.png")
         print(f"[{browser}] ❌ Unexpected general error: {e}")
-        raise # Re-raise the exception to fail the test
+        raise
 
     finally:
         if driver:
