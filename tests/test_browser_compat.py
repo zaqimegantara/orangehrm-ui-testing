@@ -15,6 +15,7 @@ from selenium.common.exceptions import TimeoutException
 from webdriver_manager.chrome import ChromeDriverManager
 from webdriver_manager.firefox import GeckoDriverManager
 from webdriver_manager.microsoft import EdgeChromiumDriverManager
+from selenium.webdriver.firefox.service import Service as FirefoxService
 
 # Load .env from root
 env_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), '.env')
@@ -48,7 +49,8 @@ def test_login_browser_compat(browser):
         elif browser == "firefox":
             options = FirefoxOptions()
             options.add_argument("--headless")
-            driver = webdriver.Firefox(service=webdriver.FirefoxService(GeckoDriverManager().install()), options=options)
+            service = FirefoxService(GeckoDriverManager().install(), timeout=180) # Try 180 seconds (3 minutes)
+            driver = webdriver.Firefox(service=service, options=options)
 
         elif browser == "edge":
             # REMOVED: if IS_CI: pytest.skip("Edge is not supported in GitHub Actions runners.")
