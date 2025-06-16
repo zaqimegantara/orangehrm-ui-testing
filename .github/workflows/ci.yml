@@ -8,41 +8,41 @@ on:
 
 jobs:
   selenium-ui-test:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-latest # Uses the latest Ubuntu runner, which typically includes Chrome, Firefox, and Edge
 
     env:
-      BASE_URL: ${{ secrets.BASE_URL }}
+      BASE_URL: ${{ secrets.BASE_URL }} # Your base URL from GitHub Secrets
+      CI: "true" # Explicitly set CI flag for your Python script
 
     steps:
     - name: 📥 Checkout repository
-      uses: actions/checkout@v3
+      uses: actions/checkout@v3 # Action to check out your code
 
     - name: 🐍 Set up Python
-      uses: actions/setup-python@v4
+      uses: actions/setup-python@v4 # Action to set up Python
       with:
-        python-version: '3.11'
+        python-version: '3.11' # Specify your Python version
 
     - name: 📦 Install dependencies
       run: |
-        python -m pip install --upgrade pip
-        pip install -r requirements.txt
-        
-        sudo apt update
-        sudo apt install -y firefox
+        python -m pip install --upgrade pip # Upgrade pip
+        pip install -r requirements.txt # Install dependencies from your requirements.txt
+        pip install webdriver-manager # Ensure webdriver-manager is installed, if not already in requirements.txt
 
-        GECKODRIVER_VERSION=0.34.0
-        wget -q "https://github.com/mozilla/geckodriver/releases/download/v$GECKODRIVER_VERSION/geckodriver-v$GECKODRIVER_VERSION-linux64.tar.gz"
-        tar -xzf geckodriver-v$GECKODRIVER_VERSION-linux64.tar.gz
-        chmod +x geckodriver
-        sudo mv geckodriver /usr/local/bin/
+        # Install necessary browsers.
+        # GitHub's ubuntu-latest runners usually come with these pre-installed,
+        # but explicit installation ensures they are present and updated.
+        sudo apt update # Update apt package lists
+        sudo apt install -y firefox google-chrome-stable microsoft-edge-stable # Install/ensure browsers are present
 
-    - name: ⚙️ Run browser compatibility tests (Chrome/Firefox only)
+    - name: ⚙️ Run browser compatibility tests (Chrome/Firefox/Edge)
+      # This command executes your pytest tests
       run: pytest tests/test_browser_compat.py -v
 
     - name: 📤 Upload test screenshots
-      if: always()
-      uses: actions/upload-artifact@v4
+      if: always() # This step will run even if the previous steps fail
+      uses: actions/upload-artifact@v4 # Action to upload artifacts (e.g., screenshots)
       with:
-        name: test-screenshots
+        name: test-screenshots # Name of the artifact
         path: |
-          *.png
+          *.png # Pattern to match all .png files in the root of the workspace
